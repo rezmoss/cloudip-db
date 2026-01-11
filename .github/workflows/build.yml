@@ -1,0 +1,107 @@
+name: Build CloudIP Data
+
+on:
+  schedule:
+    # Run at 00:30 UTC daily (after cloud-provider-ip-addresses updates)
+    - cron: '30 0 * * *'
+  workflow_dispatch:  # Allow manual trigger
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/build.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Download dependencies
+        working-directory: scripts
+        run: go mod download
+
+      - name: Build data
+        working-directory: scripts
+        run: go run build.go ../data
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if git diff --quiet data/; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes detected in data files"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Changes detected in data files"
+          fi
+
+      - name: Commit and push changes
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Get version from version.json
+          VERSION=$(jq -r '.version' data/version.json)
+          RANGES=$(jq -r '.ranges' data/version.json)
+
+          git add data/
+          git commit -m "Update cloudip data: ${VERSION}
+
+          - Total ranges: ${RANGES}
+          - Auto-generated from cloud-provider-ip-addresses"
+
+          git push
+
+      - name: Create release (on version change)
+        if: steps.check_changes.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(jq -r '.version' data/version.json)
+          RANGES=$(jq -r '.ranges' data/version.json)
+          SIZE_KB=$(jq -r '.size_gzip' data/version.json | awk '{printf "%.2f", $1/1024}')
+
+          # Check if tag already exists
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${VERSION} already exists, skipping release"
+            exit 0
+          fi
+
+          # Create tag
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+
+          # Create release
+          gh release create "v${VERSION}" \
+            --title "CloudIP Data ${VERSION}" \
+            --notes "## CloudIP Database Update
+
+          **Date:** ${VERSION}
+          **Total IP Ranges:** ${RANGES}
+          **Download Size:** ${SIZE_KB} KB (gzipped)
+
+          ### Files
+          - \`cloudip.msgpack\` - MessagePack binary
+          - \`cloudip.msgpack.gz\` - Gzip compressed
+          - \`version.json\` - Version metadata
+
+          ### Usage
+          Download from:
+          \`\`\`
+          https://github.com/rezmoss/cloudip-db/raw/main/data/cloudip.msgpack.gz
+          \`\`\`" \
+            data/cloudip.msgpack \
+            data/cloudip.msgpack.gz \
+            data/version.json
