@@ -1,8 +1,8 @@
 {
-  "version": "2026-05-15",
-  "build_time": 1778807895,
-  "sha256": "42047d770a4da3f12d734e62b07b3533a4a63985652261c69917fe47b58a9fbd",
-  "ranges": 121420,
-  "size": 6553751,
-  "size_gzip": 742776
+  "version": "2026-05-16",
+  "build_time": 1778893997,
+  "sha256": "70756a613a00c6a468d1796b8a902d39a48c31bf8e7b8f4c1330e7a1812532c3",
+  "ranges": 121416,
+  "size": 6553563,
+  "size_gzip": 742520
 }
